@@ -25,9 +25,9 @@ class BaselineConfig:
 
     # Audio processing
     target_sample_rate: int = 16000
-    n_mels: int = 64
-    n_fft: int = 1024
-    hop_length: int = 512
+    n_mels: int = 60
+    n_fft: int = int(0.040 * target_sample_rate)
+    hop_length: int = n_fft // 2
 
     # Paths
     annotation_path: str = "data/meta.txt"
