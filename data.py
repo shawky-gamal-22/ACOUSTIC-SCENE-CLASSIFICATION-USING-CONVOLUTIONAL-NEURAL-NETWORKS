@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 import torchaudio
+import torchaudio.transforms as T
 import os
 from config import BaselineConfig
 
@@ -70,11 +71,16 @@ def get_dataloader(config, split="train"):
     """Create dataloader."""
     seed = config.seed if split == "train" else config.seed + 1
 
-    transformation = torchaudio.transforms.MelSpectrogram(
-        sample_rate=config.target_sample_rate,
-        n_mels=config.n_mels,
-        n_fft=config.n_fft,
-        hop_length=config.hop_length,
+    transformation = torch.nn.Sequential(
+        T.MelSpectrogram(
+            sample_rate=config.target_sample_rate,
+            n_fft=config.n_fft,
+            win_length=config.n_fft,
+            hop_length=config.hop_length,
+            n_mels=config.n_mels,
+            norm="slaney",
+        ),
+        T.AmplitudeToDB(),
     )
 
     dataset = AudioDataset(
