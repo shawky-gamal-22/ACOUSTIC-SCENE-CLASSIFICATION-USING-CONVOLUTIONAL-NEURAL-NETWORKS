@@ -29,7 +29,7 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
         audio_sample_path = self._get_sample_path(idx)
         audio_sample_label = self._get_sample_label(idx)
-        audio_sample_path = "D:\\ITI\\projects\\DeepLearning\\ACOUSTIC-SCENE-CLASSIFICATION-USING-CONVOLUTIONAL-NEURAL-NETWORKS\\data\\audio\\a062_120_150.wav"
+        # audio_sample_path = "D:\\ITI\\projects\\DeepLearning\\ACOUSTIC-SCENE-CLASSIFICATION-USING-CONVOLUTIONAL-NEURAL-NETWORKS\\data\\audio\\a062_120_150.wav"
         if not os.path.exists(audio_sample_path):
             raise FileNotFoundError(f"Audio file not found: {audio_sample_path}")
 
