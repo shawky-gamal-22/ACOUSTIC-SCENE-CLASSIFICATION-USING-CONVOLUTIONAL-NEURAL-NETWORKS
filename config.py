@@ -17,10 +17,7 @@ class BaselineConfig:
     n_folds: int = 4
     num_classes: int = 15
     eval_every: int = 5
-
-    # Misc
-    seed: int = 42
-    device: str = "cuda"
+    patience: int = 100
 
     # Audio processing
     target_sample_rate: int = 44100
