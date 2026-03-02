@@ -136,20 +136,25 @@ class AudioDataset(Dataset):
 
             num_seqs = total_T // self.frames_per_seq
 
+            all_seq_per_audio = []
             for seq_idx in range(num_seqs):
                 start = seq_idx * self.frames_per_seq
                 end = start + self.frames_per_seq
                 seq_log_mel = log_mel[:, start:end]  # Shape: (n_mels, frames_per_seq)
-                self.items.append(
-                    (seq_log_mel[np.newaxis, ...], label)
-                )  # Add channel dimension (1, n_mels, frames_per_seq)
+                all_seq_per_audio.append(seq_log_mel)
+                # self.items.append(
+                #     (seq_log_mel[np.newaxis, ...], label)
+                # )  # Add channel dimension (1, n_mels, frames_per_seq)
+            self.items.append(
+                (np.stack(all_seq_per_audio, axis=0), label)
+            )  # Shape: (num_seqs, n_mels, frames_per_seq)
 
     def __len__(self):
         return len(self.items)
 
     def __getitem__(self, idx):
-        seq, label = self.items[idx]
+        all_seqs, label = self.items[idx]
         return (
-            torch.tensor(seq, dtype=torch.float32),
+            torch.tensor(all_seqs, dtype=torch.float32),
             torch.tensor(label, dtype=torch.long),
         )
