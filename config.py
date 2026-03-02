@@ -9,29 +9,50 @@ class BaselineConfig:
 
     name: str = "baseline"
 
-    # Data
-    num_samples: int = 1000
-    input_dim: int = 10
-    output_dim: int = 2
-
     # Training
-    batch_size: int = 32
-    num_epochs: int = 10
-    learning_rate: float = 0.01
+    batch_size: int = 128
+    non_full_epochs: int = 300
+    full_epochs: int = 200
+    learning_rate: float = 1e-3
+    n_folds: int = 4
+    num_classes: int = 15
+    eval_every: int = 5
 
     # Misc
     seed: int = 42
     device: str = "cuda"
 
     # Audio processing
-    target_sample_rate: int = 16000
+    target_sample_rate: int = 44100
     n_mels: int = 60
-    n_fft: int = int(0.040 * target_sample_rate)
+    n_fft: int = 2048
     hop_length: int = n_fft // 2
+
+    seq_duration: float = 3.0
+    audio_length: float = 30.0
 
     # Paths
     annotation_path: str = "data/meta.txt"
     data_path: str = "./data"
+    features_dir: str = "./features/"
+
+    CLASSES = [
+        "beach",
+        "bus",
+        "cafe/restaurant",
+        "car",
+        "city_center",
+        "forest_path",
+        "grocery_store",
+        "home",
+        "library",
+        "metro_station",
+        "office",
+        "park",
+        "residential_area",
+        "train",
+        "tram",
+    ]
 
 
 @dataclass
