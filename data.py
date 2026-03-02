@@ -7,69 +7,46 @@ import torchaudio
 import torchaudio.transforms as T
 import os
 from config import BaselineConfig
+import glob
+import numpy as np
+from pathlib import Path
 
 
-class AudioDataset(Dataset):
-    """
-    Simple dataset with random data and deterministic labels.
+def load_fold_data(data_dir: str):
+    config = BaselineConfig()
+    label_map = {cls: idx for idx, cls in enumerate(config.CLASSES)}
 
-    TODO: Replace with your actual dataset.
-    """
+    fold_data = {}
 
-    def __init__(self, annotation_path, data_path, transformation, target_sample_rate):
-        self.annotation = pd.read_csv(
-            annotation_path, sep="\t", header=None, names=["file_path", "label"]
+    for k in range(1, 5):
+        fold_data[k] = {"train": [], "test": []}
+
+        for split, key in [("train", "train"), ("evaluation", "test")]:
+            fpath = os.path.join(data_dir, "evaluation_setup", f"fold{k}_{split}.txt")
+            with open(fpath, "r") as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+
+                    if len(parts) <= 2:
+                        continue
+                    file_id = Path(parts[0]).stem
+                    label = parts[1].strip()
+                    fold_data[k][key].append((file_id, label_map[label]))
+
+    return fold_data, label_map
+
+
+def extract_mel_spectrogram(audio_path: str, config: BaselineConfig):
+    signal, sample_rate = torchaudio.load(audio_path)
+
+    if sample_rate != config.target_sample_rate:
+        resampler = torchaudio.transforms.Resample(
+            orig_freq=sample_rate, new_freq=config.target_sample_rate
         )
-        self.data_path = data_path
-        self.transformation = transformation
-        self.target_sample_rate = target_sample_rate
+        signal = resampler(signal)
 
-    def __len__(self):
-        return len(self.annotation)
-
-    def __getitem__(self, idx):
-        audio_sample_path = self._get_sample_path(idx)
-        audio_sample_label = self._get_sample_label(idx)
-        # audio_sample_path = "D:\\ITI\\projects\\DeepLearning\\ACOUSTIC-SCENE-CLASSIFICATION-USING-CONVOLUTIONAL-NEURAL-NETWORKS\\data\\audio\\a062_120_150.wav"
-        if not os.path.exists(audio_sample_path):
-            raise FileNotFoundError(f"Audio file not found: {audio_sample_path}")
-
-        signal, sample_rate = torchaudio.load(audio_sample_path)
-
-        signal = self._resample_if_necessary(signal, sample_rate)
-        signal = self._mix_down_if_necessary(signal)
-
-        if self.transformation:
-            signal = self.transformation(signal)
-
-        return signal, audio_sample_label
-
-    def _resample_if_necessary(self, signal, sample_rate):
-        if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(
-                orig_freq=sample_rate, new_freq=self.target_sample_rate
-            )
-            signal = resampler(signal)
-        return signal
-
-    def _mix_down_if_necessary(self, signal):
-        if signal.shape[0] > 1:
-            signal = torch.mean(signal, dim=0, keepdim=True)
-        return signal
-
-    def _get_sample_path(self, idx):
-        file_name = self.annotation.iloc[idx]["file_path"].strip()
-        full_path = os.path.join(self.data_path, file_name)
-        audio_sample_path = os.path.abspath(full_path)
-        return audio_sample_path
-
-    def _get_sample_label(self, idx):
-        return self.annotation.iloc[idx]["label"]
-
-
-def get_dataloader(config, split="train"):
-    """Create dataloader."""
-    seed = config.seed if split == "train" else config.seed + 1
+    if signal.shape[0] > 1:
+        signal = torch.mean(signal, dim=0, keepdim=True)
 
     transformation = torch.nn.Sequential(
         T.MelSpectrogram(
@@ -83,31 +60,96 @@ def get_dataloader(config, split="train"):
         T.AmplitudeToDB(),
     )
 
-    dataset = AudioDataset(
-        annotation_path=config.annotation_path,
-        data_path=config.data_path,
-        transformation=transformation,
-        target_sample_rate=config.target_sample_rate,
-    )
+    mel_spectrogram = transformation(signal)
 
-    dataloader = DataLoader(
-        dataset, batch_size=config.batch_size, shuffle=(split == "train")
-    )
-
-    return dataloader
+    return mel_spectrogram
 
 
-def __main__():
-    """Test SimpleDataset."""
+def precompute_all_features(config: BaselineConfig):
 
-    config = BaselineConfig()
+    os.makedirs(config.features_dir, exist_ok=True)
+    features = {}
 
-    data_loader = get_dataloader(config, split="train")
+    audio_files = glob.glob(os.path.join(config.data_path, "audio", "*.wav"))
 
-    signal, audio_sample_label = next(iter(data_loader))
-    print(f"Signal shape: {signal.shape}")
-    print(f"Audio sample label: {audio_sample_label}")
+    for audio_file in audio_files:
+        file_id = os.path.splitext(os.path.basename(audio_file))[0]
+        feat_path = os.path.join(config.features_dir, f"{file_id}.npy")
+
+        if os.path.exists(feat_path):
+            features[file_id] = np.load(feat_path)
+        else:
+            log_mel = extract_mel_spectrogram(audio_file, config)
+            np.save(feat_path, log_mel.numpy())
+            features[file_id] = log_mel.numpy()
+    return features
 
 
-if __name__ == "__main__":
-    __main__()
+def normalize_per_fold(features: dict, train_ids: list) -> tuple:
+    """Paper: 'normalize each bin by subtracting its mean and dividing by its
+    std, both calculated on the whole training set of each fold.'"""
+
+    train_specs = np.concatenate([features[file_id] for file_id in train_ids], axis=1)
+    mean = np.mean(train_specs, axis=1, keepdims=True)
+    std = np.std(train_specs, axis=1, keepdims=True)
+    std = np.where(std == 0, 1e-8, std)  # Avoid division by zero
+
+    normalized_features = {}
+    for file_id in features:
+        normalized_features[file_id] = (features[file_id] - mean) / std
+
+    return normalized_features, mean, std
+
+
+class AudioDataset(Dataset):
+    """
+    Simple dataset with random data and deterministic labels.
+
+    TODO: Replace with your actual dataset.
+    """
+
+    def __init__(
+        self, file_ids, labels, features, config: BaselineConfig, augment: bool = False
+    ):
+        self.file_ids = file_ids
+        self.labels = labels
+        self.features = features
+        self.config = config
+        self.augment = augment
+
+        self.frames_per_seq = int(
+            self.config.seq_duration
+            * self.config.target_sample_rate
+            / self.config.hop_length
+        )
+
+        self.items = []
+
+        for file_id, label in zip(file_ids, labels):
+            log_mel = self.features[file_id]
+            total_T = log_mel.shape[1]
+
+            if augment:
+                max_shift = self.frames_per_seq // 4
+                shift = np.random.randint(-max_shift, max_shift)
+                log_mel = np.roll(log_mel, shift, axis=1)
+
+            num_seqs = total_T // self.frames_per_seq
+
+            for seq_idx in range(num_seqs):
+                start = seq_idx * self.frames_per_seq
+                end = start + self.frames_per_seq
+                seq_log_mel = log_mel[:, start:end]  # Shape: (n_mels, frames_per_seq)
+                self.items.append(
+                    (seq_log_mel[np.newaxis, ...], label)
+                )  # Add channel dimension (1, n_mels, frames_per_seq)
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, idx):
+        seq, label = self.items[idx]
+        return (
+            torch.tensor(seq, dtype=torch.float32),
+            torch.tensor(label, dtype=torch.long),
+        )
