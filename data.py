@@ -104,7 +104,7 @@ def normalize_per_fold(features: dict, train_ids: list) -> tuple:
 
 def get_dataloaders(config, fold, state: str):
 
-    fold_data, _ = load_fold_data("./")
+    fold_data, _ = load_fold_data(config.data_path)
     features = precompute_all_features(config)
 
     train_ids, train_labels = zip(*fold_data[fold]["train"])
@@ -113,7 +113,7 @@ def get_dataloaders(config, fold, state: str):
 
     normalized_features, _, _ = normalize_per_fold(features, train_ids)
 
-    if state == "Non_full_tarining":
+    if state == "Non_full_training":
         original_train_ids = list(train_ids)
         original_train_labels = list(train_labels)
         # slice with stratified sampling to maintain class distribution
@@ -138,21 +138,12 @@ def get_dataloaders(config, fold, state: str):
         train_dataset = AudioDataset(
             train_ids, train_labels, normalized_features, config, augment=True
         )
-        validation_dataset = AudioDataset(
-            validation_ids,
-            validation_labels,
-            normalized_features,
-            config,
-            augment=False,
-        )
 
         train_loader = DataLoader(
             train_dataset, batch_size=config.batch_size, shuffle=True
         )
-        validation_loader = DataLoader(
-            validation_dataset, batch_size=config.batch_size, shuffle=False
-        )
-        return train_loader, validation_loader
+
+        return train_loader, (validation_ids, validation_labels, normalized_features)
 
     else:
 
@@ -160,24 +151,18 @@ def get_dataloaders(config, fold, state: str):
             train_ids, train_labels, normalized_features, config, augment=True
         )
 
-        test_dataset = AudioDataset(
-            test_ids, test_labels, normalized_features, config, augment=False
-        )
-
         train_loader = DataLoader(
             train_dataset, batch_size=config.batch_size, shuffle=True
         )
-        test_loader = DataLoader(
-            test_dataset, batch_size=config.batch_size, shuffle=False
-        )
 
-        return train_loader, test_loader
+        return train_loader, (test_ids, test_labels, normalized_features)
 
 
 class AudioDataset(Dataset):
     def __init__(self, file_ids, labels, features, config, augment: bool = False):
         self.config = config
         self.augment = augment
+        self.target_width = 130
         self.items = []
 
         self.frames_per_seq = int(
@@ -187,7 +172,7 @@ class AudioDataset(Dataset):
         )
 
         for file_id, label in zip(file_ids, labels):
-            log_mel = features[file_id]  # (1, 60, T)
+            log_mel = features[file_id]
             total_T = log_mel.shape[2]
 
             num_seqs = total_T // self.frames_per_seq
@@ -208,13 +193,24 @@ class AudioDataset(Dataset):
                     end = total_T
                     start = end - self.frames_per_seq
 
-                seq = log_mel[:, :, start:end]  # (1, 60, 150)
+                seq = log_mel[:, :, start:end]
 
-                all_seq_per_audio.append(seq.squeeze(0))
+                current_w = seq.shape[2]
 
-            all_seq_tensor = np.stack(all_seq_per_audio, axis=0)
+                if current_w < self.target_width:
+                    pad_width = self.target_width - current_w
+                    seq = np.pad(
+                        seq,
+                        ((0, 0), (0, 0), (0, pad_width)),
+                        mode="constant",
+                        constant_values=0,
+                    )
+                elif current_w > self.target_width:
+                    seq = seq[:, :, : self.target_width]
 
-            self.items.append((all_seq_tensor, label))
+                # all_seq_per_audio.append(seq.squeeze(0))
+                self.items.append((seq, label))
+            # all_seq_tensor = np.stack(all_seq_per_audio, axis=0)
 
     def __len__(self):
         return len(self.items)
