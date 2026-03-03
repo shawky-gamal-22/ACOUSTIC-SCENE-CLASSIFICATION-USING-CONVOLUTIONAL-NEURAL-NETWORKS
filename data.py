@@ -97,11 +97,82 @@ def normalize_per_fold(features: dict, train_ids: list) -> tuple:
     normalized_features = {}
 
     "normalize the train_ids using the same mean and std"
-    for file_id in features:
-        if file_id in train_ids:
-            normalized_features[file_id] = (features[file_id] - mean) / std
+    for file_id in features.keys():
+
+        normalized_features[file_id] = (features[file_id] - mean) / std
 
     return normalized_features, mean, std
+
+
+def get_dataloaders(config, fold, state: str):
+
+    fold_data, _ = load_fold_data("./")
+    features = precompute_all_features(config)
+
+    train_ids, train_labels = zip(*fold_data[fold]["train"])
+    # split 80 ,20
+    test_ids, test_labels = zip(*fold_data[fold]["test"])
+
+    normalized_features, _, _ = normalize_per_fold(features, train_ids)
+
+    if state == "Non_full_tarining":
+
+        # slice with stratified sampling to maintain class distribution
+        unique_labels = list(set(train_labels))
+        train_indices = []
+        val_indices = []
+
+        for label in unique_labels:
+            label_indices = [i for i, l in enumerate(train_labels) if l == label]
+            np.random.shuffle(label_indices)
+
+            split_point = int(0.8 * len(label_indices))
+            train_indices.extend(label_indices[:split_point])
+            val_indices.extend(label_indices[split_point:])
+
+        train_ids = [train_ids[i] for i in train_indices]
+        train_labels = [train_labels[i] for i in train_indices]
+
+        validation_ids = [train_ids[i] for i in val_indices]
+        validation_labels = [train_labels[i] for i in val_indices]
+
+        train_dataset = AudioDataset(
+            train_ids, train_labels, normalized_features, config, augment=True
+        )
+        validation_dataset = AudioDataset(
+            validation_ids,
+            validation_labels,
+            normalized_features,
+            config,
+            augment=False,
+        )
+
+        train_loader = DataLoader(
+            train_dataset, batch_size=config.batch_size, shuffle=True
+        )
+        validation_loader = DataLoader(
+            validation_dataset, batch_size=config.batch_size, shuffle=False
+        )
+        return train_loader, validation_loader
+
+    else:
+
+        train_dataset = AudioDataset(
+            train_ids, train_labels, normalized_features, config, augment=True
+        )
+
+        test_dataset = AudioDataset(
+            test_ids, test_labels, normalized_features, config, augment=False
+        )
+
+        train_loader = DataLoader(
+            train_dataset, batch_size=config.batch_size, shuffle=True
+        )
+        test_loader = DataLoader(
+            test_dataset, batch_size=config.batch_size, shuffle=False
+        )
+
+        return train_loader, test_loader
 
 
 class AudioDataset(Dataset):
@@ -110,7 +181,6 @@ class AudioDataset(Dataset):
         self.augment = augment
         self.items = []
 
-        # حساب عدد الأعمدة لكل 3 ثواني
         self.frames_per_seq = int(
             self.config.seq_duration
             * self.config.target_sample_rate
@@ -125,9 +195,8 @@ class AudioDataset(Dataset):
             all_seq_per_audio = []
 
             for seq_idx in range(num_seqs):
-                # حساب البداية والنهاية
                 start = seq_idx * self.frames_per_seq
-                # لو في Augment بنعمل Shift بسيط (إزاحة)
+
                 if self.augment:
                     max_shift = self.frames_per_seq // 4
                     shift = np.random.randint(-max_shift, max_shift)
@@ -135,22 +204,18 @@ class AudioDataset(Dataset):
 
                 end = start + self.frames_per_seq
 
-                # التأكد من عدم الخروج عن حدود الملف
                 if end > total_T:
                     end = total_T
                     start = end - self.frames_per_seq
 
-                seq = log_mel[:, start:end]  # (60, 150)
+                seq = log_mel[:, :, start:end]  # (60, 150)
 
-                # إضافة بُعد الـ Channel لكل مقطع (1, 60, 150)
-                seq = seq[np.newaxis, ...]
                 all_seq_per_audio.append(seq)
 
             # تجميع الـ 10 مقاطع في مصفوفة واحدة (10, 1, 60, 150)
             # الـ stack بيحول قائمة المصفوفات لمصفوفة واحدة بأبعاد جديدة
             all_seq_tensor = np.stack(all_seq_per_audio, axis=0)
 
-            # إضافة (المصفوفة الكبيرة للملف، الليبل) للـ items
             self.items.append((all_seq_tensor, label))
 
     def __len__(self):
