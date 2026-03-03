@@ -31,7 +31,7 @@ class BaselineConfig:
     # Paths
     annotation_path: str = "data/meta.txt"
     data_path: str = "./data/"
-    data_folds_path: str = "./data/folds/"
+    data_folds_path: str = "./data/"
     features_dir: str = "./features/"
 
     CLASSES = [
