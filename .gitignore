@@ -22,6 +22,8 @@ data/
 checkpoints/
 logs/
 results/
+features/
+data/folds/evaluation_setup/
 *.log
 
 # IDE
