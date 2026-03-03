@@ -95,59 +95,63 @@ def normalize_per_fold(features: dict, train_ids: list) -> tuple:
     std = np.where(std == 0, 1e-8, std)  # Avoid division by zero
 
     normalized_features = {}
+
+    "normalize the train_ids using the same mean and std"
     for file_id in features:
-        normalized_features[file_id] = (features[file_id] - mean) / std
+        if file_id in train_ids:
+            normalized_features[file_id] = (features[file_id] - mean) / std
 
     return normalized_features, mean, std
 
 
 class AudioDataset(Dataset):
-    """
-    Simple dataset with random data and deterministic labels.
-
-    TODO: Replace with your actual dataset.
-    """
-
-    def __init__(
-        self, file_ids, labels, features, config: BaselineConfig, augment: bool = False
-    ):
-        self.file_ids = file_ids
-        self.labels = labels
-        self.features = features
+    def __init__(self, file_ids, labels, features, config, augment: bool = False):
         self.config = config
         self.augment = augment
+        self.items = []
 
+        # حساب عدد الأعمدة لكل 3 ثواني
         self.frames_per_seq = int(
             self.config.seq_duration
             * self.config.target_sample_rate
             / self.config.hop_length
         )
 
-        self.items = []
-
         for file_id, label in zip(file_ids, labels):
-            log_mel = self.features[file_id]
+            log_mel = features[file_id]  # (60, T)
             total_T = log_mel.shape[1]
-
-            if augment:
-                max_shift = self.frames_per_seq // 4
-                shift = np.random.randint(-max_shift, max_shift)
-                log_mel = np.roll(log_mel, shift, axis=1)
-
             num_seqs = total_T // self.frames_per_seq
 
             all_seq_per_audio = []
+
             for seq_idx in range(num_seqs):
+                # حساب البداية والنهاية
                 start = seq_idx * self.frames_per_seq
+                # لو في Augment بنعمل Shift بسيط (إزاحة)
+                if self.augment:
+                    max_shift = self.frames_per_seq // 4
+                    shift = np.random.randint(-max_shift, max_shift)
+                    start = max(0, start + shift)
+
                 end = start + self.frames_per_seq
-                seq_log_mel = log_mel[:, start:end]  # Shape: (n_mels, frames_per_seq)
-                all_seq_per_audio.append(seq_log_mel)
-                # self.items.append(
-                #     (seq_log_mel[np.newaxis, ...], label)
-                # )  # Add channel dimension (1, n_mels, frames_per_seq)
-            self.items.append(
-                (np.stack(all_seq_per_audio, axis=0), label)
-            )  # Shape: (num_seqs, n_mels, frames_per_seq)
+
+                # التأكد من عدم الخروج عن حدود الملف
+                if end > total_T:
+                    end = total_T
+                    start = end - self.frames_per_seq
+
+                seq = log_mel[:, start:end]  # (60, 150)
+
+                # إضافة بُعد الـ Channel لكل مقطع (1, 60, 150)
+                seq = seq[np.newaxis, ...]
+                all_seq_per_audio.append(seq)
+
+            # تجميع الـ 10 مقاطع في مصفوفة واحدة (10, 1, 60, 150)
+            # الـ stack بيحول قائمة المصفوفات لمصفوفة واحدة بأبعاد جديدة
+            all_seq_tensor = np.stack(all_seq_per_audio, axis=0)
+
+            # إضافة (المصفوفة الكبيرة للملف، الليبل) للـ items
+            self.items.append((all_seq_tensor, label))
 
     def __len__(self):
         return len(self.items)
