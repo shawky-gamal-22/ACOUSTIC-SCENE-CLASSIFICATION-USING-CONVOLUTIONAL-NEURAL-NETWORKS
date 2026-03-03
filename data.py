@@ -116,9 +116,10 @@ def get_dataloaders(config, fold, state: str):
     normalized_features, _, _ = normalize_per_fold(features, train_ids)
 
     if state == "Non_full_tarining":
-
+        original_train_ids = list(train_ids)
+        original_train_labels = list(train_labels)
         # slice with stratified sampling to maintain class distribution
-        unique_labels = list(set(train_labels))
+        unique_labels = list(set(original_train_labels))
         train_indices = []
         val_indices = []
 
@@ -130,11 +131,11 @@ def get_dataloaders(config, fold, state: str):
             train_indices.extend(label_indices[:split_point])
             val_indices.extend(label_indices[split_point:])
 
-        train_ids = [train_ids[i] for i in train_indices]
-        train_labels = [train_labels[i] for i in train_indices]
+        train_ids = [original_train_ids[i] for i in train_indices]
+        train_labels = [original_train_labels[i] for i in train_indices]
 
-        validation_ids = [train_ids[i] for i in val_indices]
-        validation_labels = [train_labels[i] for i in val_indices]
+        validation_ids = [original_train_ids[i] for i in val_indices]
+        validation_labels = [original_train_labels[i] for i in val_indices]
 
         train_dataset = AudioDataset(
             train_ids, train_labels, normalized_features, config, augment=True
