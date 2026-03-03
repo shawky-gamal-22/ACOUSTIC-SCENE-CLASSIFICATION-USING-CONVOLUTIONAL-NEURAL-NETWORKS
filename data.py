@@ -86,8 +86,6 @@ def precompute_all_features(config: BaselineConfig):
 
 
 def normalize_per_fold(features: dict, train_ids: list) -> tuple:
-    """Paper: 'normalize each bin by subtracting its mean and dividing by its
-    std, both calculated on the whole training set of each fold.'"""
 
     train_specs = np.concatenate([features[file_id] for file_id in train_ids], axis=1)
     mean = np.mean(train_specs, axis=1, keepdims=True)
@@ -189,8 +187,9 @@ class AudioDataset(Dataset):
         )
 
         for file_id, label in zip(file_ids, labels):
-            log_mel = features[file_id]  # (60, T)
-            total_T = log_mel.shape[1]
+            log_mel = features[file_id]  # (1, 60, T)
+            total_T = log_mel.shape[2]
+
             num_seqs = total_T // self.frames_per_seq
 
             all_seq_per_audio = []
@@ -209,12 +208,10 @@ class AudioDataset(Dataset):
                     end = total_T
                     start = end - self.frames_per_seq
 
-                seq = log_mel[:, :, start:end]  # (60, 150)
+                seq = log_mel[:, :, start:end]  # (1, 60, 150)
 
-                all_seq_per_audio.append(seq)
+                all_seq_per_audio.append(seq.squeeze(0))
 
-            # تجميع الـ 10 مقاطع في مصفوفة واحدة (10, 1, 60, 150)
-            # الـ stack بيحول قائمة المصفوفات لمصفوفة واحدة بأبعاد جديدة
             all_seq_tensor = np.stack(all_seq_per_audio, axis=0)
 
             self.items.append((all_seq_tensor, label))
@@ -233,10 +230,30 @@ class AudioDataset(Dataset):
 if __name__ == "__main__":
 
     config = BaselineConfig()
-    fold_data, label_map = load_fold_data(config.data_folds_path)
+    fold_data, label_map = load_fold_data(config.data_path)
 
     features = precompute_all_features(config)
 
-    fold_one = fold_data[1]["train"][0]
+    fold_one = fold_data[1]
 
-    print(f"Example file ID: {fold_one[0]}, label: {fold_one[1]}")
+    train_ids, train_labels = zip(*fold_one["train"])
+    test_ids, test_labels = zip(*fold_one["test"])
+
+    normalized_features, _, _ = normalize_per_fold(features, train_ids)
+
+    train_dataset = AudioDataset(
+        train_ids, train_labels, normalized_features, config, augment=True
+    )
+
+    test_dataset = AudioDataset(
+        test_ids, test_labels, normalized_features, config, augment=False
+    )
+    print(f"Train dataset size: {len(train_dataset)}")
+    print(f"Test dataset size: {len(test_dataset)}")
+
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+
+    for batch in train_loader:
+        inputs, labels = batch
+        print(f"Input shape: {inputs.shape}, Labels shape: {labels.shape}")
+        break
