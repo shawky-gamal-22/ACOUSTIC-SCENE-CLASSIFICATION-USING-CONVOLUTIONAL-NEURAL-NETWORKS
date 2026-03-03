@@ -21,13 +21,13 @@ def load_fold_data(data_dir: str):
     for k in range(1, 5):
         fold_data[k] = {"train": [], "test": []}
 
-        for split, key in [("train", "train"), ("evaluation", "test")]:
+        for split, key in [("train", "train"), ("evaluate", "test")]:
             fpath = os.path.join(data_dir, "evaluation_setup", f"fold{k}_{split}.txt")
             with open(fpath, "r") as f:
                 for line in f:
                     parts = line.strip().split("\t")
 
-                    if len(parts) <= 2:
+                    if len(parts) < 2:
                         continue
                     file_id = Path(parts[0]).stem
                     label = parts[1].strip()
@@ -158,3 +158,15 @@ class AudioDataset(Dataset):
             torch.tensor(all_seqs, dtype=torch.float32),
             torch.tensor(label, dtype=torch.long),
         )
+
+
+if __name__ == "__main__":
+
+    config = BaselineConfig()
+    fold_data, label_map = load_fold_data(config.data_folds_path)
+
+    features = precompute_all_features(config)
+
+    fold_one = fold_data[1]["train"][0]
+
+    print(f"Example file ID: {fold_one[0]}, label: {fold_one[1]}")
