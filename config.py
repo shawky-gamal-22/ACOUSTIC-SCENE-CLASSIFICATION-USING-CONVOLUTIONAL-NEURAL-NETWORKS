@@ -13,7 +13,7 @@ class BaselineConfig:
     batch_size: int = 128
     non_full_epochs: int = 300
     full_epochs: int = 200
-    learning_rate: float = 1e-3
+    learning_rate: float = 1e-4
     n_folds: int = 4
     num_classes: int = 15
     eval_every: int = 5
@@ -29,10 +29,10 @@ class BaselineConfig:
     audio_length: float = 30.0
 
     # Paths
-    annotation_path: str = "data/meta.txt"
-    data_path: str = "./data/"
-    data_folds_path: str = "./data/"
-    features_dir: str = "./features/"
+    annotation_path: str = "data\\meta.txt"
+    data_path: str = ".\\data\\"
+    data_folds_path: str = ".\\data\\"
+    features_dir: str = ".\\features\\"
 
     CLASSES = [
         "beach",
@@ -51,6 +51,11 @@ class BaselineConfig:
         "train",
         "tram",
     ]
+
+    model_type: str = "cnn_transformer"
+    d_model: int = 256
+    nhead: int = 8
+    num_layers: int = 3
 
 
 @dataclass
